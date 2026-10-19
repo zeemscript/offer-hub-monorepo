@@ -68,26 +68,19 @@ export function CommandLine({
   return (
     <div
       className={cn(
-        "my-6 rounded-2xl overflow-hidden bg-bg-base relative z-10",
+        "my-6 rounded-2xl overflow-hidden bg-bg-base shadow-neu-raised relative z-10",
         className,
       )}
-      style={{
-        boxShadow: "6px 6px 14px var(--shadow-dark), -6px -6px 14px var(--shadow-light)",
-      }}
     >
       {/* Terminal header bar */}
       <div
-        className="flex items-center gap-2 px-4 py-2.5 border-b border-theme-border/20"
-        style={{
-          background: "var(--color-bg-sunken)",
-          boxShadow: "inset 2px 2px 4px var(--shadow-dark), inset -2px -2px 4px var(--shadow-light)",
-        }}
+        className="flex items-center gap-2 px-4 py-2.5 border-b border-theme-border/20 bg-bg-sunken shadow-neu-sunken-subtle"
       >
-        <span className="w-2.5 h-2.5 rounded-full bg-red-400/80" />
-        <span className="w-2.5 h-2.5 rounded-full bg-yellow-400/80" />
-        <span className="w-2.5 h-2.5 rounded-full bg-green-400/80" />
+        <span className="w-2.5 h-2.5 rounded-full bg-theme-error/80" />
+        <span className="w-2.5 h-2.5 rounded-full bg-theme-warning/80" />
+        <span className="w-2.5 h-2.5 rounded-full bg-theme-success/80" />
         {label && (
-          <span className="ml-2 text-[11px] font-bold uppercase tracking-widest text-content-secondary/60">
+          <span className="ml-2 text-xs font-bold uppercase tracking-widest text-content-secondary/60">
             {label}
           </span>
         )}
@@ -96,10 +89,10 @@ export function CommandLine({
           onClick={handleCopy}
           aria-label={copied ? "Command copied" : "Copy command"}
           className={cn(
-            "ml-auto inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium",
-            "transition-all duration-200",
+            "ml-auto inline-flex items-center gap-1.5 px-2 min-h-11 min-w-11 justify-center rounded-md text-xs font-medium",
+            "transition-colors duration-200",
             copied
-              ? "text-green-500"
+              ? "text-theme-success"
               : "text-content-secondary hover:text-content-primary",
           )}
         >

@@ -7,8 +7,12 @@ import type { ApiEndpoint } from "@/data/api-schema";
 import { MethodBadge } from "./MethodBadge";
 import { ParameterInput } from "./ParameterInput";
 import { ResponseViewer } from "./ResponseViewer";
+import { Textarea } from "@/components/ui/Textarea";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000/api/v1";
+// endpoint.path already includes the /api/v1 prefix (it is the real
+// orchestrator path, e.g. "/api/v1/orders/{id}") - BASE_URL must be the bare
+// origin, not the origin + prefix, or every request URL doubles the prefix.
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
 interface EndpointPanelProps {
   endpoint: ApiEndpoint;
@@ -68,25 +72,17 @@ export function EndpointPanel({ endpoint }: EndpointPanelProps) {
 
   return (
     <div
-      className="rounded-2xl overflow-hidden bg-bg-base relative z-10"
-      style={{
-        boxShadow: "6px 6px 14px var(--shadow-dark), -6px -6px 14px var(--shadow-light)",
-      }}
+      className="rounded-2xl overflow-hidden bg-bg-base shadow-neu-raised relative z-10"
     >
       {/* ── Header button ── */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          "w-full flex items-center gap-3 px-5 py-4 text-left transition-all duration-200",
+          "w-full flex items-center gap-3 px-5 py-4 text-left transition-[background-color,box-shadow] duration-200",
           isOpen
-            ? "bg-bg-sunken"
+            ? "bg-bg-sunken shadow-neu-sunken-subtle"
             : "bg-bg-base hover:bg-bg-sunken/50",
         )}
-        style={
-          isOpen
-            ? { boxShadow: "inset 2px 2px 5px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light)" }
-            : {}
-        }
       >
         <MethodBadge method={endpoint.method} />
         <span className="text-sm font-mono font-semibold text-content-primary">
@@ -97,6 +93,7 @@ export function EndpointPanel({ endpoint }: EndpointPanelProps) {
         </span>
         <ChevronDown
           size={16}
+          aria-hidden="true"
           className={cn(
             "ml-auto flex-shrink-0 text-content-secondary transition-transform duration-300 ease-out",
             isOpen && "rotate-0",
@@ -156,22 +153,18 @@ export function EndpointPanel({ endpoint }: EndpointPanelProps) {
 
               {endpoint.requestBody && (
                 <div className="space-y-2">
-                  <h4 className="text-[11px] font-black uppercase tracking-widest text-theme-primary">
-                    Request Body{" "}
-                    <span className="ml-2 font-normal normal-case tracking-normal text-content-secondary">
-                      {endpoint.requestBody.contentType}
-                    </span>
-                  </h4>
-                  <textarea
+                  <Textarea
+                    id={`request-body-${endpoint.path}`}
+                    label="Request body"
+                    labelClassName="text-[11px] font-black uppercase tracking-widest text-theme-primary"
                     value={bodyValue}
                     onChange={(e) => setBodyValue(e.target.value)}
                     rows={Math.min(bodyValue.split("\n").length + 1, 12)}
-                    className="w-full rounded-xl px-4 py-3 text-sm font-mono text-content-primary outline-none resize-y transition-all"
-                    style={{
-                      background: "var(--color-bg-sunken)",
-                      boxShadow: "inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light)",
-                    }}
+                    className="text-sm font-mono resize-y"
                   />
+                  <p className="text-xs text-content-secondary">
+                    {endpoint.requestBody.contentType}
+                  </p>
                 </div>
               )}
             </div>
@@ -183,11 +176,7 @@ export function EndpointPanel({ endpoint }: EndpointPanelProps) {
               Request URL
             </h4>
             <div
-              className="rounded-xl px-4 py-2 text-sm font-mono break-all text-theme-primary"
-              style={{
-                background: "var(--color-bg-sunken)",
-                boxShadow: "inset 2px 2px 5px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light)",
-              }}
+              className="rounded-xl px-4 py-2 text-sm font-mono break-all text-theme-primary bg-bg-sunken shadow-neu-sunken-subtle"
             >
               <span className="text-content-secondary mr-1">{endpoint.method}</span>
               {buildUrl()}
@@ -198,9 +187,9 @@ export function EndpointPanel({ endpoint }: EndpointPanelProps) {
           <button
             onClick={handleTryIt}
             disabled={loading}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white btn-neumorphic-primary disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white btn-neumorphic-primary disabled:opacity-60 disabled:cursor-not-allowed transition-[background-color,box-shadow,transform,opacity] duration-200"
           >
-            {loading ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+            {loading ? <Loader2 size={16} aria-hidden="true" className="animate-spin" /> : <Play size={16} aria-hidden="true" />}
             {loading ? "Sending..." : "Try it"}
           </button>
 

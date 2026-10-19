@@ -1,9 +1,13 @@
 ---
 title: Disputes Guide
 description: How to handle disputes in OFFER-HUB — opening, resolving, and managing disagreements between buyers and sellers.
-order: 4
+order: 21
 section: Guides
 ---
+
+<Callout type="note">
+  This is the public API/SDK guide for integrators. For internal implementation detail (Orchestrator state machine, signer roles), see [`docs/guides/disputes.md`](https://github.com/OFFER-HUB/OFFER-HUB/blob/main/docs/guides/disputes.md) in the repo.
+</Callout>
 
 Disputes are a critical part of any marketplace. When a buyer and seller disagree, OFFER-HUB provides a structured process to resolve conflicts fairly while funds remain safely locked in escrow.
 
@@ -31,26 +35,51 @@ A dispute should be opened when:
 ```
 IN_PROGRESS
       ↓
-DISPUTING (opening dispute)
-      ↓
 DISPUTED (awaiting resolution)
       ↓
   ┌───┴───┐
   ↓       ↓
-REFUNDED  CLOSED
+REFUNDED  RELEASED
 (buyer)   (seller)
+      ↓
+    CLOSED
 ```
 
 ### State Descriptions
 
 | State | Description |
 |-------|-------------|
-| `DISPUTING` | Dispute transaction being submitted |
 | `DISPUTED` | Funds locked, awaiting platform resolution |
 | `REFUNDED` | Dispute resolved in buyer's favor |
-| `CLOSED` | Dispute resolved in seller's favor |
+| `RELEASED` | Dispute resolved in seller's favor |
+| `CLOSED` | Order completed after resolution |
 
 ## Opening a Dispute
+### Dispute Resolution Sequence
+
+```mermaid
+sequenceDiagram
+    accTitle: Dispute open and resolve
+    accDescr: Buyer opens dispute, escrow frozen, platform reviews, resolves on-chain with release or refund.
+    autonumber
+    participant Buyer
+    participant Orchestrator
+    participant Support as Platform Support
+    participant TW as Trustless Work Contract
+    Buyer->>Orchestrator: POST /orders/&#123;id&#125;/resolution/dispute
+    Orchestrator->>TW: disputeEscrow (buyer signs)
+    Orchestrator-->>Buyer: 200 DISPUTED
+    Support->>Orchestrator: GET /disputes/&#123;id&#125;
+    alt FULL_RELEASE
+        Support->>Orchestrator: POST /disputes/&#123;id&#125;/resolve
+        Orchestrator->>TW: resolveDispute(100% seller)
+    else FULL_REFUND
+        Support->>Orchestrator: POST /disputes/&#123;id&#125;/resolve
+        Orchestrator->>TW: resolveDispute(100% buyer)
+    end
+    Orchestrator-->>Buyer: SSE order.released or order.refunded
+`
+```
 
 Only the buyer can initiate a dispute on an `IN_PROGRESS` order:
 
@@ -59,8 +88,8 @@ curl -X POST http://localhost:4000/api/v1/orders/ord_xyz789/resolution/dispute \
   -H "Authorization: Bearer ohk_live_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
-    "requestedBy": "usr_buyer123",
-    "reason": "Seller has not delivered the agreed work after 2 weeks"
+    "openedBy": "BUYER",
+    "reason": "NOT_DELIVERED"
   }'
 ```
 
@@ -68,8 +97,8 @@ curl -X POST http://localhost:4000/api/v1/orders/ord_xyz789/resolution/dispute \
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `requestedBy` | string | Yes | User ID of the buyer |
-| `reason` | string | Yes | Description of the issue |
+| `openedBy` | string | Yes | `"BUYER"` or `"SELLER"` |
+| `reason` | string | Yes | `"NOT_DELIVERED"`, `"QUALITY_ISSUE"`, or `"OTHER"` |
 
 ### Response
 
@@ -80,8 +109,8 @@ curl -X POST http://localhost:4000/api/v1/orders/ord_xyz789/resolution/dispute \
     "status": "DISPUTED",
     "dispute": {
       "id": "dsp_abc123",
-      "openedBy": "usr_buyer123",
-      "reason": "Seller has not delivered the agreed work after 2 weeks",
+      "openedBy": "BUYER",
+      "reason": "NOT_DELIVERED",
       "status": "open",
       "openedAt": "2026-02-25T10:00:00.000Z"
     }
@@ -94,7 +123,7 @@ curl -X POST http://localhost:4000/api/v1/orders/ord_xyz789/resolution/dispute \
 1. **Order status changes** — Becomes `DISPUTED`
 2. **Escrow is frozen** — Neither party can release funds
 3. **Platform is notified** — Support team receives alert
-4. **Both parties notified** — Buyer and seller get email/webhook
+4. **Both parties notified** — Buyer and seller are notified (via your app's SSE integration)
 5. **Evidence period begins** — Both parties can submit documentation
 
 ### On-Chain Transaction
@@ -123,7 +152,7 @@ curl -X POST http://localhost:4000/api/v1/disputes/dsp_abc123/resolve \
   -H "Authorization: Bearer ohk_live_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
-    "resolution": "refund",
+    "decision": "FULL_REFUND",
     "note": "Seller failed to deliver work within agreed timeframe"
   }'
 ```
@@ -137,7 +166,7 @@ curl -X POST http://localhost:4000/api/v1/disputes/dsp_abc123/resolve \
   -H "Authorization: Bearer ohk_live_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
-    "resolution": "release",
+    "decision": "FULL_RELEASE",
     "note": "Buyer confirmed delivery via email, dispute was a misunderstanding"
   }'
 ```
@@ -151,25 +180,25 @@ curl -X POST http://localhost:4000/api/v1/disputes/dsp_abc123/resolve \
   -H "Authorization: Bearer ohk_live_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
-    "resolution": "split",
-    "buyerAmount": "30.00",
-    "sellerAmount": "20.00",
+    "decision": "SPLIT",
+    "releaseAmount": "20.00",
+    "refundAmount": "30.00",
     "note": "Seller delivered 40% of agreed work"
   }'
 ```
 
 <Callout type="note">
-  Split resolution requires both amounts to sum to the original escrow amount minus any platform fees.
+  Split resolution requires both `releaseAmount` (seller) and `refundAmount` (buyer) to sum to the original escrow amount.
 </Callout>
 
 ### Resolution Request Body
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `resolution` | string | Yes | `refund`, `release`, or `split` |
-| `note` | string | Yes | Explanation of the decision |
-| `buyerAmount` | string | Split only | Amount to refund to buyer |
-| `sellerAmount` | string | Split only | Amount to release to seller |
+| `decision` | string | Yes | `"FULL_RELEASE"`, `"FULL_REFUND"`, or `"SPLIT"` |
+| `note` | string | No | Internal note for the decision |
+| `releaseAmount` | string | Split only | Amount to release to seller |
+| `refundAmount` | string | Split only | Amount to refund to buyer |
 
 ### Resolution Response
 
@@ -178,7 +207,7 @@ curl -X POST http://localhost:4000/api/v1/disputes/dsp_abc123/resolve \
   "data": {
     "id": "dsp_abc123",
     "status": "resolved",
-    "resolution": "refund",
+    "decision": "FULL_REFUND",
     "resolvedBy": "usr_support",
     "resolvedAt": "2026-02-25T14:00:00.000Z",
     "note": "Seller failed to deliver work within agreed timeframe",
@@ -222,40 +251,42 @@ curl -X POST http://localhost:4000/api/v1/disputes/dsp_abc123/comments \
 
 ## Listing Disputes
 
-Get all disputes with filtering:
+`GET /disputes` accepts three optional filters: `orderId`, `status` (`OPEN`, `UNDER_REVIEW`, `RESOLVED`) and `openedBy` (`BUYER`, `SELLER`). It is **not paginated**: it returns every match, newest first (`DisputesController.listDisputes`, `ResolutionService.listDisputes`).
 
 ```bash
 # All open disputes
-curl "http://localhost:4000/api/v1/disputes?status=open" \
+curl "http://localhost:4000/api/v1/disputes?status=OPEN" \
   -H "Authorization: Bearer ohk_live_your_api_key"
 
-# Disputes for a specific user
-curl "http://localhost:4000/api/v1/disputes?user_id=usr_buyer123" \
+# The dispute on one order
+curl "http://localhost:4000/api/v1/disputes?orderId=ord_xyz789" \
   -H "Authorization: Bearer ohk_live_your_api_key"
 
-# Disputes in date range
-curl "http://localhost:4000/api/v1/disputes?created_after=2026-02-01&created_before=2026-02-28" \
+# Disputes opened by buyers
+curl "http://localhost:4000/api/v1/disputes?openedBy=BUYER" \
   -H "Authorization: Bearer ohk_live_your_api_key"
 ```
 
 ### Response
 
+The controller returns `{ success, data }`, which the response interceptor wraps once more. See [Response Format](/docs/api-reference/overview#response-format).
+
 ```json
 {
-  "data": [
-    {
-      "id": "dsp_abc123",
-      "orderId": "ord_xyz789",
-      "openedBy": "usr_buyer123",
-      "reason": "Work not delivered",
-      "status": "open",
-      "openedAt": "2026-02-25T10:00:00.000Z"
-    }
-  ],
-  "pagination": {
-    "has_more": false,
-    "next_cursor": null
-  }
+  "data": {
+    "success": true,
+    "data": [
+      {
+        "id": "dsp_abc123",
+        "orderId": "ord_xyz789",
+        "openedBy": "BUYER",
+        "reason": "NOT_DELIVERED",
+        "status": "OPEN",
+        "createdAt": "2026-02-25T10:00:00.000Z"
+      }
+    ]
+  },
+  "meta": { "requestId": "3f2b8c1e-9d4a-4c7e-8a51-0b6e2d9f7a13", "timestamp": "2026-02-25T10:00:00.412Z" }
 }
 ```
 
@@ -308,8 +339,7 @@ const sdk = new OfferHubSDK({
 });
 
 // Open a dispute
-const dispute = await sdk.resolution.dispute('ord_xyz789', {
-  requestedBy: 'usr_buyer123',
+const dispute = await sdk.disputes.open('ord_xyz789', {
   reason: 'Work not delivered as specified'
 });
 
@@ -322,7 +352,7 @@ await sdk.disputes.addComment(dispute.id, {
 
 // Resolve the dispute (requires support scope)
 await sdk.disputes.resolve(dispute.id, {
-  resolution: 'refund',
+  decision: 'FULL_REFUND',
   note: 'Seller confirmed they could not complete the work'
 });
 ```
@@ -339,62 +369,56 @@ events.on('order.disputed', (data) => {
 });
 
 events.on('dispute.resolved', (data) => {
-  console.log('Dispute resolved:', data.resolution);
+  console.log('Dispute resolved:', data.decision);
   // Notify both parties
   notifyParties(data);
 });
 ```
 
-## Webhooks for Disputes
+## Real-Time Dispute Events (SSE)
 
-Subscribe to dispute events:
+Dispute lifecycle events are delivered over the [SSE event stream](/docs/api-reference/events) at `GET /api/v1/events` — there is no outbound webhook API:
 
 ```bash
-curl -X POST http://localhost:4000/api/v1/webhooks \
-  -H "Authorization: Bearer ohk_live_your_api_key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://your-app.com/webhooks",
-    "events": ["escrow.disputed", "escrow.refunded"],
-    "secret": "your-webhook-secret"
-  }'
+curl -N "http://localhost:4000/api/v1/events?types=order.disputed,dispute.opened,dispute.resolved" \
+  -H "Authorization: Bearer ohk_live_your_api_key"
 ```
 
-### Webhook Payloads
+Or with the SDK:
 
-**escrow.disputed:**
+```js
+events.on('order.disputed', (data) => {
+  console.log('New dispute:', data.disputeId);
+  notifySupport(data);
+});
+
+events.on('dispute.resolved', (data) => {
+  console.log('Dispute resolved:', data.decision);
+  notifyParties(data);
+});
+```
+
+The `order.disputed` event payload looks like this:
 
 ```json
 {
-  "id": "evt_abc123",
-  "type": "escrow.disputed",
-  "created_at": "2026-02-25T10:00:00.000Z",
-  "data": {
-    "escrow_id": "esc_xyz789",
-    "dispute_id": "dsp_abc123",
-    "opened_by": "usr_buyer123",
-    "reason": "Work not delivered",
-    "order_id": "ord_xyz789"
-  }
+  "eventId": "evt_abc123",
+  "eventType": "order.disputed",
+  "occurredAt": "2026-02-25T10:00:00.000Z",
+  "aggregateId": "ord_xyz789",
+  "aggregateType": "Order",
+  "payload": {
+    "orderId": "ord_xyz789",
+    "disputeId": "dsp_abc123",
+    "openedBy": "BUYER",
+    "reason": "NOT_DELIVERED",
+    "openedAt": "2026-02-25T10:00:00.000Z"
+  },
+  "metadata": {}
 }
 ```
 
-**escrow.refunded:**
-
-```json
-{
-  "id": "evt_def456",
-  "type": "escrow.refunded",
-  "created_at": "2026-02-25T14:00:00.000Z",
-  "data": {
-    "escrow_id": "esc_xyz789",
-    "buyer_id": "usr_buyer123",
-    "amount": "50.00",
-    "currency": "XLM",
-    "order_id": "ord_xyz789"
-  }
-}
-```
+When a dispute is resolved, the escrow settles and the corresponding order events (`order.released` or `order.refunded`) fire on the same stream.
 
 ## Best Practices
 
@@ -420,7 +444,7 @@ curl -X POST http://localhost:4000/api/v1/webhooks \
 | `ORDER_NOT_IN_PROGRESS` | Order not in disputable state | Check order status first |
 | `DISPUTE_ALREADY_EXISTS` | Order already has open dispute | Get existing dispute details |
 | `UNAUTHORIZED_DISPUTE` | Non-buyer trying to open dispute | Only buyers can open disputes |
-| `INVALID_RESOLUTION` | Invalid resolution type | Use `refund`, `release`, or `split` |
+| `INVALID_RESOLUTION` | Invalid decision value | Use `FULL_RELEASE`, `FULL_REFUND`, or `SPLIT` |
 | `INSUFFICIENT_SCOPE` | API key lacks `support` scope | Use key with support permissions |
 
 ## Idempotency
@@ -430,9 +454,9 @@ Dispute operations support idempotency keys:
 ```bash
 curl -X POST http://localhost:4000/api/v1/orders/ord_xyz789/resolution/dispute \
   -H "Authorization: Bearer ohk_live_your_api_key" \
-  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440012" \
   -H "Content-Type: application/json" \
-  -d '{"requestedBy": "usr_buyer123", "reason": "Work not delivered"}'
+  -d '{"openedBy": "BUYER", "reason": "NOT_DELIVERED"}'
 ```
 
 Dispute idempotency keys are stored **forever** — you cannot open the same dispute twice.
@@ -440,5 +464,5 @@ Dispute idempotency keys are stored **forever** — you cannot open the same dis
 ## Next Steps
 
 - [Withdrawals Guide](/docs/guide/withdrawals) — Move funds off-platform
-- [Webhooks Reference](/docs/api-reference/webhooks) — Event notification details
+- [Events (SSE)](/docs/api-reference/events) — SSE event stream and event catalog
 - [SDK Reference](/docs/sdk/quick-start) — Full SDK documentation

@@ -1,7 +1,7 @@
 ---
 title: Quick Start
 description: Create your first user and order in 5 minutes.
-order: 1
+order: 11
 section: Guides
 ---
 
@@ -19,18 +19,43 @@ You need:
 
 ## Step 1: Create a User
 
-Register a buyer in the system:
+Register a buyer in the system. Pick your language below — the docs remember your choice on every page:
 
-```bash
-curl -X POST http://localhost:4000/api/v1/users \
-  -H "Authorization: Bearer ohk_live_your_api_key" \
-  -H "Content-Type: application/json" \
+<CodeTabs
+  label="Create a user"
+  tabs={[
+    {
+      id: "curl",
+      label: "cURL",
+      language: "bash",
+      code: `curl -X POST http://localhost:4000/api/v1/users \\
+  -H "Authorization: Bearer ohk_live_your_api_key" \\
+  -H "Content-Type: application/json" \\
   -d '{
     "externalUserId": "your-user-123",
     "email": "buyer@example.com",
     "type": "BUYER"
-  }'
-```
+  }'`,
+    },
+    {
+      id: "typescript",
+      label: "TypeScript",
+      language: "typescript",
+      code: `import { OfferHubSDK } from '@offerhub/sdk';
+
+const sdk = new OfferHubSDK({
+  apiUrl: process.env.OFFERHUB_API_URL,
+  apiKey: process.env.OFFERHUB_API_KEY,
+});
+
+const user = await sdk.users.create({
+  externalUserId: 'your-user-123',
+  email: 'buyer@example.com',
+  type: 'BUYER',
+});`,
+    },
+  ]}
+/>
 
 Response:
 
@@ -110,7 +135,7 @@ Create an order between a buyer and seller:
 curl -X POST http://localhost:4000/api/v1/orders \
   -H "Authorization: Bearer ohk_live_your_api_key" \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440008" \
   -d '{
     "buyerId": "usr_buyer123",
     "sellerId": "usr_seller456",
@@ -240,11 +265,11 @@ const order = await sdk.orders.create({
 await sdk.orders.reserve(order.id);
 
 // Create and fund escrow
-await sdk.escrow.create(order.id);
-await sdk.escrow.fund(order.id);
+await sdk.orders.createEscrow(order.id);
+await sdk.orders.fundEscrow(order.id);
 
 // Release to seller
-await sdk.resolution.release(order.id, { requestedBy: buyer.id });
+await sdk.orders.release(order.id, 'Work completed');
 ```
 
 ## Listening to Events
