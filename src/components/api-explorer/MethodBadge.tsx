@@ -5,6 +5,7 @@ const METHOD_STYLES: Record<HttpMethod, { color: string; bg: string }> = {
   GET: { color: "var(--color-success)", bg: "rgba(22,163,74,0.12)" },
   POST: { color: "var(--color-primary)", bg: "rgba(20,154,155,0.12)" },
   PUT: { color: "var(--color-warning)", bg: "rgba(217,119,6,0.12)" },
+  PATCH: { color: "var(--color-primary)", bg: "rgba(20,154,155,0.18)" },
   DELETE: { color: "var(--color-error)", bg: "rgba(220,38,38,0.12)" },
 };
 
